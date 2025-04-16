@@ -9,7 +9,7 @@ from datetime import timedelta
 import time
 import logging
 import signal
-from gevent import pool, event, GreenletExit
+from gevent import pool, event, GreenletExit, spawn
 from tqdm import tqdm
 from typing import Optional, Dict, Any, List, Tuple
 import gevent
@@ -61,6 +61,7 @@ class IndexerComparator:
         self._is_shutdown_handled = False
         self.use_progressbar = use_progressbar
         self.progress_interval = progress_interval
+        self._progress_monitor = None
 
         # Initialize API clients based on protocol
         self.primary_client, self.secondary_client = self._create_api_clients()
@@ -68,7 +69,8 @@ class IndexerComparator:
         # Retrieve and validate chain information
         primary_chain_info = self.primary_client.get_node_info()['chainInfo']
         secondary_chain_info = self.secondary_client.get_node_info()['chainInfo']
-        self._validate_network_compatibility(primary_chain_info, secondary_chain_info)
+        # TODO: fractal not supported validate network compatibility
+        # self._validate_network_compatibility(primary_chain_info, secondary_chain_info)
         
         # Get appropriate comparator
         self.comparator = get_comparator(blockchain, protocol)
@@ -218,28 +220,31 @@ class IndexerComparator:
                         task = thread_pool.spawn(self._process_block, height, progress)
                         active_tasks.append(task)
             else:
-                # Use periodic logging for progress
-                last_log_time = time.time()
+                # Use asynchronous progress reporting
                 progress_status = {'processed': 0}
                 
-                def log_progress():
-                    percent = (progress_status['processed'] / total_blocks) * 100
-                    blocks_per_sec = progress_status['processed'] / (time.time() - start_time)
-                    logging.info(f"Progress: {progress_status['processed']}/{total_blocks} blocks "
-                                f"({percent:.2f}%) - {blocks_per_sec:.2f} blocks/sec")
-                    
-                # Custom progress tracking callback
+                # Define the async progress monitor function
+                def async_progress_monitor():
+                    """Asynchronous progress monitoring and reporting task"""
+                    while not self.shutdown_event.is_set():
+                        percent = (progress_status['processed'] / total_blocks) * 100 if total_blocks > 0 else 0
+                        elapsed = time.time() - start_time
+                        blocks_per_sec = progress_status['processed'] / elapsed if elapsed > 0 else 0
+                        
+                        logging.info(f"Progress: {progress_status['processed']}/{total_blocks} blocks "
+                                    f"({percent:.2f}%) - {blocks_per_sec:.2f} blocks/sec")
+                        
+                        # Sleep for the configured interval
+                        gevent.sleep(self.progress_interval)
+                
+                # Start the async progress monitor
+                self._progress_monitor = spawn(async_progress_monitor)
+                
+                # Simple callback to update progress counter
                 def update_progress(amount=1):
                     progress_status['processed'] += amount
-                    current_time = time.time()
-                    # Log progress using the configured interval
-                    if current_time - last_log_time[0] >= self.progress_interval:
-                        log_progress()
-                        last_log_time[0] = current_time
-
-                # Create a mutable object for last_log_time to be updated in the callback
-                last_log_time = [last_log_time]
                 
+                # Process all blocks
                 for height in range(self.start_block, self.end_block + 1):
                     if self.shutdown_event.is_set():
                         logging.info('Exiting due to shutdown signal')
@@ -247,13 +252,22 @@ class IndexerComparator:
                         
                     task = thread_pool.spawn(self._process_block, height, update_progress)
                     active_tasks.append(task)
-                    
-                # Log final progress
+                
+                # Wait for all tasks to complete
+                gevent.joinall(active_tasks)
+                
+                # Stop the progress monitor
+                if self._progress_monitor and not self._progress_monitor.dead:
+                    self._progress_monitor.kill(block=False)
+                
+                # Print final progress stats
                 if not self.shutdown_event.is_set():
-                    log_progress()
+                    percent = (progress_status['processed'] / total_blocks) * 100 if total_blocks > 0 else 0
+                    elapsed = time.time() - start_time
+                    blocks_per_sec = progress_status['processed'] / elapsed if elapsed > 0 else 0
                     
-            # Wait for tasks to complete
-            gevent.joinall(active_tasks)
+                    logging.info(f"Final: {progress_status['processed']}/{total_blocks} blocks "
+                                f"({percent:.2f}%) - {blocks_per_sec:.2f} blocks/sec")
             
             # Print completion message
             self._log_completion_metrics(start_time)
@@ -284,6 +298,11 @@ class IndexerComparator:
             for task in active_tasks:
                 if not task.ready():
                     task.kill(block=False)
+            
+            # Stop progress monitor if it's running
+            if self._progress_monitor and not self._progress_monitor.dead:
+                logging.debug('Stopping progress monitor')
+                self._progress_monitor.kill(block=False)
                     
             logging.info('Waiting for tasks to terminate...')
             thread_pool.join(timeout=5)

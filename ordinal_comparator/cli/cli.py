@@ -88,7 +88,7 @@ def parse_arguments():
     )
     optional_args.add_argument(
         '--no-progressbar',
-        help='Disable progress bar and print progress every 10 seconds instead',
+        help='Disable progress bar and use asynchronous progress reporting instead',
         action='store_true',
         dest='no_progressbar'
     )
