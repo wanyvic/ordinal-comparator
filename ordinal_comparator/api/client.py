@@ -125,7 +125,7 @@ class OrdinalAPIClient(APIClient):
         Raises:
             RequestException: If the request fails
         """
-        url = f"{self.base_url}/api/v1/ord/block/{block_hash}/events"
+        url = f"{self.base_url}/api/v1/ord/block/{block_hash}/inscriptions"
         return self._fetch_json(url, timeout, "Ordinals block receipts").get('data', {})
 
 
