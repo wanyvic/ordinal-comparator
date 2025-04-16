@@ -10,4 +10,12 @@ RUN apt-get update && \
 
 RUN pip install --no-cache-dir .
 
-ENTRYPOINT ["ordinal-comparator"]
+# Create logs directory
+RUN mkdir -p /app/logs && chmod 755 /app/logs
+
+# Copy entrypoint script and make it executable
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Default command if no command is provided
+CMD ["ordinal-comparator", "--help"]

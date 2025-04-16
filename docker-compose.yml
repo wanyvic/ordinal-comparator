@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  ordinal-comparator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ordinal-comparator:latest
+    container_name: ordinal-comparator
+    restart: unless-stopped
+    volumes:
+      # Log files volume mount, container logs will be written to the ./logs directory on the host
+      - ./logs:/app/logs
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh
+    environment:
+      # Set basic environment variables, can be overridden by command line arguments at runtime
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
+    command: >
+      ordinal-comparator
+      --primary-endpoint ${PRIMARY_ENDPOINT:-https://primary-indexer.com}
+      --secondary-endpoint ${SECONDARY_ENDPOINT:-https://secondary-indexer.com}
+      --protocol ${PROTOCOL:-ORDINAL}
+      --chain ${CHAIN:-BITCOIN}
+      --threads ${THREADS:-100}
+      ${START_BLOCK:+--start-block $START_BLOCK}
+      --log-file /app/logs/comparator.log
+      ${LOG_LEVEL:+--log-level $LOG_LEVEL}
+      ${END_BLOCK:+--end-block $END_BLOCK}
+    # Make container interactive so we can see the output
+    tty: true
+    stdin_open: true
