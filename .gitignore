@@ -1,0 +1,5 @@
+.idea
+.venv
+*.log
+build
+ord_indexer_comparator.egg-info
