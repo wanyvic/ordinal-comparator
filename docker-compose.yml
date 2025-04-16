@@ -15,7 +15,9 @@ services:
     environment:
       # Set basic environment variables, can be overridden by command line arguments at runtime
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
+    env_file:
+      - .env
+    entrypoint: [ "/bin/sh", "/docker-entrypoint.sh" ]
     command: >
       ordinal-comparator
       --primary-endpoint ${PRIMARY_ENDPOINT:-https://primary-indexer.com}
@@ -23,6 +25,8 @@ services:
       --protocol ${PROTOCOL:-ORDINAL}
       --chain ${CHAIN:-BITCOIN}
       --threads ${THREADS:-100}
+      --no-progressbar
+      ${PROGRESS_INTERVAL:+--progress-interval $PROGRESS_INTERVAL}
       ${START_BLOCK:+--start-block $START_BLOCK}
       --log-file /app/logs/comparator.log
       ${LOG_LEVEL:+--log-level $LOG_LEVEL}

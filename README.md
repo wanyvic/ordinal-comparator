@@ -29,7 +29,7 @@ ordinal-comparator -p https://primary-indexer.com -s https://secondary-indexer.c
 ordinal-comparator -p https://primary-indexer.com -s https://secondary-indexer.com -m brc20 -c bitcoin --start-block 780000 --end-block 785000
 
 # 调整并发工作线程数
-ordinal-comparator -p https://primary-indexer.com -s https://secondary-indexer.com -m ordinal -c bitcoin --threads 50
+ordinal-comparator -p https://primary-indexer.com -s https://secondary-indexer.com -m ordinal -c bitcoin --threads 100
 
 # 使用详细日志记录
 ordinal-comparator -p https://primary-indexer.com -s https://secondary-indexer.com -m brc20 -c bitcoin --log-level DEBUG --log-file comparison.log
@@ -47,6 +47,8 @@ ordinal-comparator -p https://primary-indexer.com -s https://secondary-indexer.c
 - `--start-block`: 起始区块高度（默认：每个协议的首个有效区块）
 - `--end-block`: 结束区块高度（默认：两个节点共同的最新区块）
 - `--threads`: 并发工作线程数（默认：100）
+- `--no-progressbar`: 禁用进度条，改为每10秒打印处理进度
+- `--progress-interval`: 进度更新间隔时间，单位为秒（默认：10）
 - `--log-level`: 日志级别（DEBUG, INFO, WARNING, ERROR, CRITICAL）
 - `--log-file`: 日志文件路径（默认：输出到控制台）
 

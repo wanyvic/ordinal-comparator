@@ -86,6 +86,19 @@ def parse_arguments():
         type=int,
         default=100
     )
+    optional_args.add_argument(
+        '--no-progressbar',
+        help='Disable progress bar and print progress every 10 seconds instead',
+        action='store_true',
+        dest='no_progressbar'
+    )
+    optional_args.add_argument(
+        '--progress-interval',
+        help='Progress update interval in seconds (default: 10)',
+        type=int,
+        default=10,
+        dest='progress_interval'
+    )
     
     # Logging options
     log_args = parser.add_argument_group('Logging Options')
@@ -126,7 +139,9 @@ def main():
             blockchain=args.blockchain,
             protocol=args.protocol,
             start_block=args.start_block,
-            end_block=args.end_block
+            end_block=args.end_block,
+            use_progressbar=not args.no_progressbar,
+            progress_interval=args.progress_interval
         )
         
         # Create thread pool and run comparison

@@ -36,7 +36,9 @@ class IndexerComparator:
         blockchain: Blockchain, 
         protocol: Protocol,
         start_block: Optional[int] = None,
-        end_block: Optional[int] = None
+        end_block: Optional[int] = None,
+        use_progressbar: bool = True,
+        progress_interval: int = 10
     ):
         """
         Initialize a new indexer comparator.
@@ -48,6 +50,8 @@ class IndexerComparator:
             protocol: Protocol to compare (BRC20 or Ordinal)
             start_block: Starting block height (default: chain-specific first block)
             end_block: Ending block height (default: lowest current height of both endpoints)
+            use_progressbar: Whether to display a progress bar (default: True)
+            progress_interval: Interval in seconds for progress updates when not using progressbar (default: 10)
         """
         self.primary_endpoint = primary_endpoint
         self.secondary_endpoint = secondary_endpoint
@@ -55,6 +59,8 @@ class IndexerComparator:
         self.protocol = protocol
         self.shutdown_event = event.Event()
         self._is_shutdown_handled = False
+        self.use_progressbar = use_progressbar
+        self.progress_interval = progress_interval
 
         # Initialize API clients based on protocol
         self.primary_client, self.secondary_client = self._create_api_clients()
@@ -196,16 +202,55 @@ class IndexerComparator:
         # Track spawned tasks
         active_tasks: List[Greenlet] = []
         
+        # Total number of blocks to process
+        total_blocks = self.end_block - self.start_block + 1
+        
         try:
             # Process blocks in range
-            with tqdm(total=self.end_block - self.start_block + 1, desc="Processing Blocks") as progress:
+            if self.use_progressbar:
+                # Use tqdm progress bar
+                with tqdm(total=total_blocks, desc="Processing Blocks") as progress:
+                    for height in range(self.start_block, self.end_block + 1):
+                        if self.shutdown_event.is_set():
+                            logging.info('Exiting due to shutdown signal')
+                            break
+                            
+                        task = thread_pool.spawn(self._process_block, height, progress)
+                        active_tasks.append(task)
+            else:
+                # Use periodic logging for progress
+                last_log_time = time.time()
+                progress_status = {'processed': 0}
+                
+                def log_progress():
+                    percent = (progress_status['processed'] / total_blocks) * 100
+                    blocks_per_sec = progress_status['processed'] / (time.time() - start_time)
+                    logging.info(f"Progress: {progress_status['processed']}/{total_blocks} blocks "
+                                f"({percent:.2f}%) - {blocks_per_sec:.2f} blocks/sec")
+                    
+                # Custom progress tracking callback
+                def update_progress(amount=1):
+                    progress_status['processed'] += amount
+                    current_time = time.time()
+                    # Log progress using the configured interval
+                    if current_time - last_log_time[0] >= self.progress_interval:
+                        log_progress()
+                        last_log_time[0] = current_time
+
+                # Create a mutable object for last_log_time to be updated in the callback
+                last_log_time = [last_log_time]
+                
                 for height in range(self.start_block, self.end_block + 1):
                     if self.shutdown_event.is_set():
                         logging.info('Exiting due to shutdown signal')
                         break
                         
-                    task = thread_pool.spawn(self._process_block, height, progress)
+                    task = thread_pool.spawn(self._process_block, height, update_progress)
                     active_tasks.append(task)
+                    
+                # Log final progress
+                if not self.shutdown_event.is_set():
+                    log_progress()
                     
             # Wait for tasks to complete
             gevent.joinall(active_tasks)
@@ -270,11 +315,14 @@ class IndexerComparator:
         
         Args:
             height: Block height to process
-            progress: Optional progress bar to update
+            progress: Optional progress tracker (either tqdm instance or update function)
         """
         if not self._is_block_eligible(height):
             if progress:
-                progress.update(1)
+                if hasattr(progress, 'update'):  # tqdm instance
+                    progress.update(1)
+                else:  # custom update function
+                    progress(1)
             return
             
         try:
@@ -315,7 +363,10 @@ class IndexerComparator:
             
         finally:
             if progress and not self.shutdown_event.is_set():
-                progress.update(1)
+                if hasattr(progress, 'update'):  # tqdm instance
+                    progress.update(1)
+                else:  # custom update function
+                    progress(1)
 
     def _is_block_eligible(self, height: int) -> bool:
         """
